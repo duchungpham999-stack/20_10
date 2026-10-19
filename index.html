@@ -124,6 +124,10 @@ footer .heart { color:#f4abc7; }
 .music-tools button{border:0;border-bottom:1px dotted rgba(255,224,240,.6);background:transparent;color:#ffe3ed;padding:2px 0;font-size:10px;line-height:1.7}
 .music-play{flex:0 0 37px;width:37px;height:37px;border-radius:50%;border:1px solid rgba(255,255,255,.5);color:#42203f;background:linear-gradient(120deg,#fff0e9,#ffc3df);font-size:13px;display:grid;place-items:center;box-shadow:0 0 30px rgba(250,139,196,.29)}
 .music-play:hover{filter:brightness(1.1)}
+.autoplay-prompt{position:fixed;bottom:max(19px,env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);z-index:32;width:max-content;max-width:calc(100% - 24px);display:flex;gap:14px;align-items:center;justify-content:space-between;padding:12px 12px 12px 17px;border:1px solid rgba(255,219,238,.42);border-radius:18px;background:rgba(28,18,51,.94);box-shadow:0 16px 55px rgba(0,0,0,.38),0 0 30px rgba(248,136,189,.13);backdrop-filter:blur(18px);font-size:12px;color:#ffe7f3}
+.autoplay-prompt[hidden]{display:none}
+.autoplay-prompt button{border:0;border-radius:999px;padding:11px 17px;background:linear-gradient(120deg,#fff3e7,#f8acd1);color:#44243e;font-size:12px;font-weight:700;white-space:nowrap}
+@media(max-width:440px){.autoplay-prompt{font-size:11px;gap:8px;padding:10px 10px 10px 12px}.autoplay-prompt button{padding:10px 12px;font-size:11px}}
 @media(max-width:840px){.action-row{justify-content:center}.music-panel{margin:27px auto 0;text-align:left}.bouquet-photo{top:-4%;width:100%}.envelope{width:min(57%,270px);right:1%;bottom:0}}
 .env-label{left:0;right:0;width:100%}
 @media(max-width:450px){.action-row{gap:8px}.flower-button{padding:13px 12px;font-size:11px}.cta{padding:15px 16px;font-size:11px}.music-panel{padding:12px 10px;gap:9px;margin-top:25px}.music-symbol{flex-basis:36px;height:36px;font-size:21px}.music-play{width:34px;height:34px;flex-basis:34px}.scene{height:470px;min-height:470px}.bouquet-photo{width:100%;top:0}.envelope{width:57%;right:1%;bottom:0}.message{z-index:8}}
@@ -156,7 +160,7 @@ footer .heart { color:#f4abc7; }
     <button class="music-play" id="musicPlay" type="button" aria-label="Phát nhạc">▶</button>
   </section>
   <input type="file" id="audioFileInput" accept="audio/*,.mp3,.m4a" hidden />
-  <audio id="song" preload="metadata" src="assets/em-oi-sau-nay-diep-khuc.mp3"></audio>
+  <audio id="song" autoplay playsinline preload="auto" src="assets/em-oi-sau-nay-diep-khuc.mp3"></audio>
  </section>
  <section class="scene" id="scene" aria-label="Thiệp chúc mừng 20/10">
   <div class="glow" aria-hidden="true"></div>
@@ -186,11 +190,12 @@ footer .heart { color:#f4abc7; }
   <label for="wishInput">Lời chúc của anh</label><textarea id="wishInput" maxlength="1400"></textarea>
   <label for="chorusStartInput" style="display:none">Tùy chỉnh điểm phát (giây)</label>
   <input id="chorusStartInput" type="number" min="0" max="600" step="1" inputmode="numeric" value="0" style="display:none" />
-  <p class="hint">Bản nhạc đã được tích hợp và được phát từ điệp khúc đến hết bài khi người nhận mở quà hoặc nhấn nút phát.</p>
+  <p class="hint">Thiệp sẽ tự phát nhạc khi được trình duyệt cho phép. Nếu trình duyệt chặn phát nhạc có tiếng, hãy chạm một lần vào thiệp để bật nhạc.</p>
   <button type="submit" class="cta">Lưu và xem thiệp ✦</button>
   <p class="hint">Đã đính kèm nhạc <strong>Em ơi sau này – Trid Minh</strong>. Nhấn “Chia sẻ thiệp” để tạo đường link riêng. Chỉ đăng công khai nếu bạn có quyền chia sẻ bản ghi âm. Muốn người nhận mở được link, hãy đưa trang này lên GitHub Pages, Netlify hoặc Vercel trước.</p>
  </form>
 </div>
+<div class="autoplay-prompt" id="autoplayPrompt" role="status" aria-live="polite" hidden><span>♫ Chạm một lần để nghe lời ca dành cho em</span><button type="button" id="enableAudioBtn">Bật nhạc ♡</button></div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <script>
 (() => {
@@ -276,12 +281,37 @@ footer .heart { color:#f4abc7; }
  seek.addEventListener('input',()=>{if(playable()){song.currentTime=Number(seek.value);syncPlayer();}});
  song.addEventListener('loadedmetadata',syncPlayer);
  song.addEventListener('timeupdate',syncPlayer);
- song.addEventListener('play',syncPlayer);
+ song.addEventListener('play',()=>{ $('autoplayPrompt').hidden=true; giftMusicTriggered=true; $('musicStatus').textContent='♫ Đang phát nhạc · Điệp khúc đến hết bài'; syncPlayer(); });
  song.addEventListener('pause',syncPlayer);
  song.addEventListener('ended',()=>{song.pause();syncPlayer();});
  song.addEventListener('error',()=>{syncPlayer();});
  document.addEventListener('visibilitychange',()=>{if(document.hidden && !song.paused) song.pause();});
  refreshMusicStatus();syncPlayer();
+ // Browsers may block audible autoplay for a first-time visitor. Try automatically,
+ // then keep a single-tap fallback; never pretend a muted player is audible.
+ async function tryStartAutomatically(){
+   if(!song.paused)return;
+   song.muted=false;
+   try { await song.play(); }
+   catch (err) {
+     if(song.paused){
+       $('autoplayPrompt').hidden=false;
+       $('musicStatus').textContent='♫ Chạm một lần để bật nhạc · Điệp khúc đến hết bài';
+     }
+   }
+ }
+ $('enableAudioBtn').addEventListener('click',()=>{giftMusicTriggered=true; if(song.paused)toggleMusic();});
+ // A first gesture anywhere on the greeting can unlock music, including in-app browsers.
+ function tryUnlockOnFirstTap(event){
+   if(!song.paused || event.target.closest('#musicBtn, #musicPlay, #enableAudioBtn, #audioFileBtn, #markChorusBtn, #seekRange'))return;
+   giftMusicTriggered=true;
+   try {
+     const result=song.play();
+     if(result && typeof result.then==='function') result.catch(()=>{});
+   } catch {}
+ }
+ document.addEventListener('click',tryUnlockOnFirstTap,{capture:true,once:true});
+ tryStartAutomatically();
 })();
 </script>
 </body>
